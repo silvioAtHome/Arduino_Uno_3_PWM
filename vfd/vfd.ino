@@ -1,13 +1,11 @@
 
 /*
-
-
   13 / PB7 ist LED "L" vergeben durch SPI
   8 button kippschalter für Anzeigen-Umschaltung 7Seg
 
   2 green LED
   3,5,6 red LEDs
-  
+
   SPI auf Arduino Uno
   SCK 13
   MISO 12
@@ -19,7 +17,7 @@
   Drehzahlmesser-Timer0   (Arduino-Pin ??, PD5/PD6) UNO 5,6 .. PD4 ist Timer0 Input (UNO4)
   Tic-Timer1 16bit (Arduino-Pin 9,10 .. PB1,PB2)
   PWM Timer2 (analogWrite) , (Arduino-Pin 3,11 .. PB3/PD3) PD3-> UNO 3
-  
+
 */
 
 #include <SPI.h>
@@ -39,11 +37,11 @@
 // für 50 Hz/s
 #define P0 3.0625f
 
-// 0.025s 
+// 0.025s
 /*(2^16 -59285)/(8e6/32)
- ans  =
- 
-    0.025004  
+  ans  =
+
+    0.025004
 */
 #define COUNTERPRESET 59285
 
@@ -53,25 +51,25 @@ volatile bool tic = false;
 volatile float speed = 0.0f;
 volatile uint16_t isr_cnt = 0;
 float speed_command = 0.0f;
-const float LUT[PPP]={
-0.0000f,0.1951f,0.3827f,0.5556f,0.7071f, 
-0.8315f,0.9239f,0.9808f,1.0000f,0.9808f, 
-0.9239f,0.8315f,0.7071f,0.5556f,0.3827f, 
-0.1951f,0.0000f,-0.1951f,-0.3827f,-0.5556f, 
--0.7071f,-0.8315f,-0.9239f,-0.9808f,-1.0000f, 
--0.9808f,-0.9239f,-0.8315f,-0.7071f,-0.5556f, 
--0.3827f,-0.1951f};
+const float LUT[PPP] = {
+  0.0000f, 0.1951f, 0.3827f, 0.5556f, 0.7071f,
+  0.8315f, 0.9239f, 0.9808f, 1.0000f, 0.9808f,
+  0.9239f, 0.8315f, 0.7071f, 0.5556f, 0.3827f,
+  0.1951f, 0.0000f, -0.1951f, -0.3827f, -0.5556f,
+  -0.7071f, -0.8315f, -0.9239f, -0.9808f, -1.0000f,
+  -0.9808f, -0.9239f, -0.8315f, -0.7071f, -0.5556f,
+  -0.3827f, -0.1951f
+};
 
 void setup() {
   pinMode(8, INPUT_PULLUP); // Umschalter 7-Segement
-//  pinMode(A2, OUTPUT);
   pinMode(LEDGREEN, OUTPUT);
 
   digitalWrite(SS, HIGH);
   SPI.begin();
   SPI.setClockDivider(SPI_CLOCK_DIV128);
   SPI.setDataMode(SPI_MODE3);
-  // PWM 
+  // PWM
 
   noInterrupts();                       // disable all interrupts
   TCCR1A = 0;
@@ -92,31 +90,31 @@ void setup() {
 /* timer for PWM channels */
 ISR(TIMER1_OVF_vect)
 {
-  static uint8_t ti0=0,ti1 = PPP/8,ti2= PPP/4;
+  static uint8_t ti0 = 0, ti1 = PPP / 8, ti2 = PPP / 4;
   isr_cnt = ((int) (ISRTIMDIV / speed));
   TCNT1 = 65535 - isr_cnt;
   tic = true;
-  
+
   //toggle green LED
   //digitalWrite(LEDGREEN, digitalRead(LEDGREEN) ^ 1);
-  digitalWrite(LEDGREEN,1);
-  
+  digitalWrite(LEDGREEN, 1);
+
   analogWrite(3, (uint16_t) (30.0 * (1.0f + LUT[ti0++])));
   analogWrite(5, (uint16_t) (30.0 * (1.0f + LUT[ti1++])));
   analogWrite(6, (uint16_t) (30.0 * (1.0f + LUT[ti2++])));
-  if(speed_command > speed)
+  if (speed_command > speed)
   {
-    speed += P0/(2.0*speed);
+    speed += P0 / (2.0 * speed);
   }
-  if(speed_command < speed - 0.1)
-  { 
-    speed -= P0/(2.0*speed);
+  if (speed_command < speed - 0.1)
+  {
+    speed -= P0 / (2.0 * speed);
   }
-  if(speed< 1.0) speed=1.0;
-  ti0%=PPP;
-  ti1%=PPP;
-  ti2%=PPP;
-  digitalWrite(LEDGREEN,0);
+  if (speed < 1.0) speed = 1.0;
+  ti0 %= PPP;
+  ti1 %= PPP;
+  ti2 %= PPP;
+  digitalWrite(LEDGREEN, 0);
 }
 
 bool readSwitch(void)
@@ -219,15 +217,15 @@ void loop() {
     tic = false;
     analog0raw = analogRead(23);
     /* speed 1..70 Hz */
-    speed_command = 1.0f + 69.0 * ((float) analog0raw)/ 1023.0f;
-       
+    speed_command = 1.0f + 69.0 * ((float) analog0raw) / 1023.0f;
+
     switch ((int) readSwitch())
     {
       case 0:
         Tm74HC595(isr_cnt, LCD);
         break;
       case 1:
-        Tm74HC595((uint16_t)( 10.0f * speed),LCD);
+        Tm74HC595((uint16_t)( 10.0f * speed), LCD);
         addComma(1, LCD);
     }
 

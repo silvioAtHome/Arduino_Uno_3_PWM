@@ -14,9 +14,9 @@
 
   A1 ist Analogread(23) Poti
 
-  Drehzahlmesser-Timer0   (Arduino-Pin ??, PD5/PD6) UNO 5,6 .. PD4 ist Timer0 Input (UNO4)
+  Timer0 8 bit  (Arduino-Pin ??, PD5/PD6) UNO 5,6 .. PD4 ist Timer0 Input (UNO4)
   Tic-Timer1 16bit (Arduino-Pin 9,10 .. PB1,PB2)
-  PWM Timer2 (analogWrite) , (Arduino-Pin 3,11 .. PB3/PD3) PD3-> UNO 3
+  PWM Timer2 8bit, (analogWrite) , (Arduino-Pin 3,11 .. PB3/PD3) PD3-> UNO 3
 
 */
 
@@ -78,16 +78,22 @@ void setup() {
   TCNT1 = COUNTERPRESET;                        // preload timer
   TCCR1B |=  (1 << CS11);  //  prescaler = 8 -> 2MHz Zählgeschwindigkeit
   TIMSK1 |= (1 << TOIE1);               // enable timer overflow interrupt ISR
-  interrupts();                         // enable all interrupts
+  
 
-  //Drehzahlmesser Timer0
-  //TCCR0A = 0;
-  //TCCR0B = 0;
-  //TCNT0 = 0;
-  //TCCR0B |= (1 << CS02) | (1 << CS01) | (1 << CS00);  // count on rising edge
+  //PWM Timer2, prescaler 8 -> 3.9 kHz, DS p 124
+  //OC0A ist Pin PD6, OC0B ist Pin PD5
+  DDRD |= (1 << PD5) | (1 << PD6);
+  TCCR0A = (1 << WGM00) | (1 << COM0B1) | (1 << COM0A1); // phase corrected mode
+  TCCR0B |= (1 << CS01);  // prescaler = 8
+  
+  //OC2B ist Pin PD3
+  DDRD |= (1 << PD3);
+  TCCR2A = (1 << WGM20) | (1 << COM2B1);
+  TCCR2B |= (1 << CS21);  // prescaler = 8
+  interrupts();                         // enable all interrupts
 }
 
-/* timer for PWM channels */
+/* timer 1 ISR for setting the PWM channels */
 ISR(TIMER1_OVF_vect)
 {
   static uint8_t ti0 = 0, ti1 = PPP / 8, ti2 = PPP / 4;
@@ -99,9 +105,15 @@ ISR(TIMER1_OVF_vect)
   //digitalWrite(LEDGREEN, digitalRead(LEDGREEN) ^ 1);
   digitalWrite(LEDGREEN, 1);
 
-  analogWrite(3, (uint16_t) (30.0 * (1.0f + LUT[ti0++])));
-  analogWrite(5, (uint16_t) (30.0 * (1.0f + LUT[ti1++])));
-  analogWrite(6, (uint16_t) (30.0 * (1.0f + LUT[ti2++])));
+  // pin PD3
+  OCR2B=(uint16_t) (30.0 * (1.0f + LUT[ti2++]));
+  
+  // pin PD5
+  OCR0B=(uint16_t) (30.0 * (1.0f + LUT[ti1++]));
+  
+  // pin PD6
+  OCR0A=(uint16_t) (30.0 * (1.0f + LUT[ti0++]));
+    
   if (speed_command > speed)
   {
     speed += P0 / (2.0 * speed);

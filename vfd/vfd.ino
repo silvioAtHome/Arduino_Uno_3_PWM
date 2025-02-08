@@ -23,42 +23,51 @@
 #include <SPI.h>
 
 #define LEDGREEN 2
-#define PPP 32
-#define ISRTIMERFREQUENCY 2000000.0f
+#define PPP 24
+#define ISRTIMERFREQUENCY 1000000.0f
 
 // manuell rechnen ISRTIMERFREQUENCY / PPP;
-#define ISRTIMDIV 62500.0f
+// #define ISRTIMDIV 31250.0f
+#define ISRTIMDIV 41666.667f
 
 // manuell rechnen. Beschleunigungsfaktor
 //p0=acc*2.0/((float) PPP);
 //p0*=0.98; // Korrektur, woher auch immer!?
 
-// für 1 Hz/s
+// für acc=1 Hz/s
 //#define P0 0.06125f
 
-// für 5 Hz/s
+// für acc=5 Hz/s
 //#define P0 0.30625f
 
-// für 50 Hz/s
-#define P0 3.0625f
+// für acc=50 Hz/s
+//#define P0 3.0625f
+
+//#define P0 4.1666667f
+
+// für acc=100 Hz/s
+#define P0 8.3333333
 
 uint8_t LCD[4];
-uint16_t analog0raw;
+uint8_t tic_cnt;
+uint16_t analog0raw, analog0 = 0;
 
 volatile float speed = 0.0f;
 volatile uint16_t isr_cnt = 0, timer_after_isr;;
 float speed_command = 0.0f;
 const float LUT[PPP] = {
-  1.0000f, 1.1951f, 1.3827f, 1.5556f, 1.7071f,
-  1.8315f, 1.9239f, 1.9808f, 2.0000f, 1.9808f,
-  1.9239f, 1.8315f, 1.7071f, 1.5556f, 1.3827f,
-  1.1951f, 1.0000f, 0.8049f, 0.6173f, 0.4444f,
-  0.2929f, 0.1685f, 0.0761f, 0.0192f, 0.0000f,
-  0.0192f, 0.0761f, 0.1685f, 0.2929f, 0.4444f,
-  0.6173f, 0.8049f
+  1.0000f, 1.2588f, 1.5000f, 1.7071f, 1.8660f,
+  1.9659f, 2.0000f, 1.9659f, 1.8660f, 1.7071f,
+  1.5000f, 1.2588f, 1.0000f, 0.7412f, 0.5000f,
+  0.2929f, 0.1340f, 0.0341f, 0.0000f, 0.0341f,
+  0.1340f, 0.2929f, 0.5000f, 0.7412f
 };
 
 void setup() {
+
+  //set system clock to 8 MHz to archive 15.6 kHz PWm at the end
+  CLKPR = (1 << CLKPCE);
+  CLKPR = (1 << CLKPS0);
   pinMode(8, INPUT_PULLUP); // Umschalter 7-Segement
   pinMode(LEDGREEN, OUTPUT);
   pinMode(4, INPUT_PULLUP); //close button
@@ -76,7 +85,7 @@ void setup() {
   TCCR1A = (1 << COM1A0); // toggle OC1A, but it is just enable
   TCCR1B =  (1 << WGM12); // CTC mode
   OCR1A = 65535;         // initinal step until the ISR writes a new value
-  TCCR1B |=  (1 << CS11);  //  prescaler = 8 -> 2MHz Zählgeschwindigkeit
+  TCCR1B |=  (1 << CS11);  //  prescaler = 8 -> 1MHz Zählgeschwindigkeit bei clock = 8MHz
   TIMSK1 |= (1 << OCIE1A);               // enable timer interrupt on output compare A
 
   //PWM Timer2, prescaler 8 -> 3.9 kHz, DS p 124
@@ -90,7 +99,7 @@ void setup() {
   DDRD |= (1 << PD3);
   TCCR2A = (1 << WGM20) | (1 << COM2B1);
 
-  // enable clock for pwm
+  // enable clock for pwm, f_pwm = 8e6/510 = 15686.275 Hz
   TCCR0B = (1 << CS00);  // prescaler = 1
   TCCR2B = (1 << CS20);  // prescaler = 1
   interrupts();                         // enable all interrupts
@@ -101,17 +110,18 @@ ISR(TIMER1_COMPA_vect)
 {
   uint8_t pwm0, pwm1, pwm2;
   static uint8_t ti0 = 0, ti1 = PPP / 8, ti2 = PPP / 4;
+  //static uint8_t ti0 = 0, ti1 = PPP / 3 , ti2 = 2* PPP / 3;
   // set the new output compare value of current speed
   isr_cnt = ((int) (ISRTIMDIV / speed));
-  OCR1A = isr_cnt;
+  OCR1A = isr_cnt; // vielleicht noch +1  hier.
 
   //toggle green LED
   digitalWrite(LEDGREEN, digitalRead(LEDGREEN) ^ 1);
   //digitalWrite(LEDGREEN, 1);
 
-  pwm0 = (uint16_t) (30.0 * (LUT[ti2++]));
-  pwm1 = (uint16_t) (30.0 * (LUT[ti1++]));
-  pwm2 = (uint16_t) (30.0 * (LUT[ti0++]));
+  pwm0 = 0 + (uint16_t) (speed * LUT[ti2++]);
+  pwm1 = 0 + (uint16_t) (speed * LUT[ti1++]);
+  pwm2 = 0 + (uint16_t) (speed * LUT[ti0++]);
 
   OCR2B = pwm0; // pin PD3
   OCR0B = pwm1; // pin PD5
@@ -139,7 +149,7 @@ ISR(TIMER1_COMPA_vect)
   }
   if (speed < 1.0) speed = 1.0;
 
-  timer_after_isr = TCNT1;//TH<<8+TL;
+  timer_after_isr = TCNT1;
 
   //digitalWrite(LEDGREEN, 0);
 }
@@ -244,8 +254,16 @@ void addComma(uint8_t digit, uint8_t *copy_to)
 
 void loop() {
   analog0raw = analogRead(23);
-  /* speed 1..70 Hz */
-  speed_command = 1.0f + 169.0 * ((float) analog0raw) / 1023.0f;
+  /* speed 1..100 Hz mit ein bisschen Hysterese */
+  if (analog0raw > analog0 + 4)
+  {
+    analog0 = analog0raw - 4;
+  }
+  if (analog0raw < analog0)
+  {
+    analog0 = analog0raw;
+  }
+  speed_command = 1.0f + 120.0 * ((float) analog0) / 1019.0f;
 
   switch ((int) readSwitch())
   {
@@ -255,7 +273,10 @@ void loop() {
     case 1:
       if (readButtonClose())
       {
-        Tm74HC595(timer_after_isr, LCD);
+        if (tic_cnt++ == 0)
+        {
+          Tm74HC595(timer_after_isr, LCD);
+        }
       } else
       {
         Tm74HC595((uint16_t)( 10.0f * speed), LCD);

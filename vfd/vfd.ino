@@ -72,30 +72,37 @@ void setup() {
   SPI.setClockDivider(SPI_CLOCK_DIV128);
   SPI.setDataMode(SPI_MODE3);
 
+/* http://www.openmusiclabs.com/learning/digital/synchronizing-timers/index.html 
+  timer synchronization */
   /* init Timer */
   noInterrupts(); /* disable all interrupts */
   /* Timer 1 for ISR */
+  /* stop all timer */
+  GTCCR = (1<<TSM)|(1<<PSRASY)|(1<<PSRSYNC); // halt all timers
   /* set to: Clear Timer on Compare Match (CTC) Mode */
   TCCR1A = (1 << COM1A0);   /* toggle OC1A, but it is just enable */
   TCCR1B =  (1 << WGM12);   /* enable CTC mode */
   OCR1A = 65535;            /* initinal step until the ISR writes a new value */
   TCCR1B |=  (1 << CS11);   /* prescaler = 8 -> 1MHz Zählgeschwindigkeit bei clock = 8MHz */
   TIMSK1 |= (1 << OCIE1A);  /* enable timer interrupt on output compare A */
+  TCNT1=0;
 
   /* PWM Timer0 */
   /*OC0A ist Pin PD6, OC0B ist Pin PD5 */
   DDRD |= (1 << PD5) | (1 << PD6); /* enable outputs */
   TCCR0A = (1 << WGM00) | (1 << COM0B1) | (1 << COM0A1); /* phase corrected mode */
-
+  TCNT0=0;
+  TCCR0B = (1 << CS00);  /* prescaler = 1 */
   /* PWM Timer2 */
   /* OC2B ist Pin PD3 */
   DDRD |= (1 << PD3); /* enable output */
   TCCR2A = (1 << WGM20) | (1 << COM2B1);
-
+  TCNT2=0;
   /* enable clock for pwm, no prescaler f_pwm = 8e6/510 = 15686.275 Hz, DS p 124 */
-  TCCR0B = (1 << CS00);  /* prescaler = 1 */
   TCCR2B = (1 << CS20);  /* prescaler = 1 */
   interrupts();  // enable all interrupts
+  /* start all timer synchronuously */
+  GTCCR = 0; // release all timers
 }
 
 /* timer 1 ISR for setting the PWM channels */

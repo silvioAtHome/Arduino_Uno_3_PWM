@@ -12,7 +12,8 @@
   MOSI 11
   CS 10
 
-  PIN A1 is Analogread(23) Poti
+  PIN A1 is Analogread(23) Poti Frequency
+  PIN A2 is Analogread(24) Poti Amplitude
 
   PWM Timer0 8 bit  (Arduino-Uno Pin 5,6, PD5/PD6) UNO 5,6
   ISR Tic-Timer1 16bit (Arduino-Pin 9,10 .. PB1,PB2) pins are not used
@@ -44,18 +45,17 @@
 
 uint8_t LCD[4];
 uint8_t tic_cnt;
-uint16_t analog0raw, analog0 = 0;
+uint16_t analog0raw, analog0 = 0, analog1=0;
 
 volatile float speed = MINSPEED;
 volatile uint16_t isr_cnt = 0, timer_after_isr;;
 float speed_command = 0.0f;
-const float LUT[PPP] = {
-  0.0000f, 0.0341f, 0.1340f, 0.2929f, 0.5000f,
-  0.7412f, 1.0000f, 1.2588f, 1.5000f, 1.7071f,
-  1.8660f, 1.9659f, 2.0000f, 1.9659f, 1.8660f,
-  1.7071f, 1.5000f, 1.2588f, 1.0000f, 0.7412f,
-  0.5000f, 0.2929f, 0.1340f, 0.0341f
-};
+const float LUT[PPP]={
+0.0000f,0.2588f,0.5000f,0.7071f,0.8660f, 
+0.9659f,1.0000f,0.9659f,0.8660f,0.7071f, 
+0.5000f,0.2588f,0.0000f,-0.2588f,-0.5000f, 
+-0.7071f,-0.8660f,-0.9659f,-1.0000f,-0.9659f, 
+-0.8660f,-0.7071f,-0.5000f,-0.2588f};
 
 void setup() {
 
@@ -109,12 +109,12 @@ ISR(TIMER1_COMPA_vect)
   OCR1A = isr_cnt;
 
   //toggle green LED
-  digitalWrite(LEDGREEN, digitalRead(LEDGREEN) ^ 1);
-  //digitalWrite(LEDGREEN, 1);
+  //digitalWrite(LEDGREEN, digitalRead(LEDGREEN) ^ 1);
+  digitalWrite(LEDGREEN, 1);
 
-  pwm0 = 0 + (uint16_t) (125.0 * LUT[ti2++]);
-  pwm1 = 0 + (uint16_t) (125.0 * LUT[ti1++]);
-  pwm2 = 0 + (uint16_t) (125.0 * LUT[ti0++]);
+  pwm0 = 128 + (uint16_t) ((float) analog1 * LUT[ti2++]);
+  pwm1 = 128 + (uint16_t) ((float) analog1 * LUT[ti1++]);
+  pwm2 = 128 + (uint16_t) ((float) analog1 * LUT[ti0++]);
 
   OCR2B = pwm0; /* pin PD3 */
   OCR0B = pwm1; /* pin PD5 */
@@ -144,7 +144,7 @@ ISR(TIMER1_COMPA_vect)
 
   timer_after_isr = TCNT1;
 
-  //digitalWrite(LEDGREEN, 0);
+  digitalWrite(LEDGREEN, 0);
 }
 
 bool readSwitch(void)
@@ -249,6 +249,7 @@ void addComma(uint8_t digit, uint8_t *copy_to)
 
 void loop() {
   analog0raw = analogRead(23);
+  analog1 = analogRead(24) / 9 ;
   /* speed 1..125 Hz mit ein bisschen Hysterese */
   if (analog0raw > analog0 + 4)
   {
@@ -265,7 +266,7 @@ void loop() {
     case 0:
       if (readButtonClose())
       {
-        Tm74HC595((uint16_t) (ISRTIMERFREQUENCY / (float) isr_cnt), LCD);
+        Tm74HC595((uint16_t) (ISRTIMERFREQUENCY / (float) (isr_cnt + 1)), LCD);
       }
       else
       {

@@ -24,12 +24,12 @@
 #include <SPI.h>
 
 #define LEDGREEN 2
-#define PPP 24
+#define PPP 96
 #define ISRTIMERFREQUENCY 1000000.0f
 
-// manuell rechnen ISRTIMERFREQUENCY / PPP;
+// manuell rechnen ISRTIMDIV = ISRTIMERFREQUENCY / PPP;
 // #define ISRTIMDIV 31250.0f
-#define ISRTIMDIV 41666.667f
+#define ISRTIMDIV 10416.667 
 #define MINSPEED 1.0f
 
 // manuell rechnen. Beschleunigungsfaktor
@@ -41,7 +41,7 @@
   acc:50  4.083333 3.062500
   acc:100 8.166667 6.125000
 */
-#define P0 8.166667
+#define P0 2.0833333
 
 uint8_t LCD[4];
 uint8_t tic_cnt;
@@ -51,11 +51,26 @@ volatile float speed = MINSPEED;
 volatile uint16_t isr_cnt = 0, timer_after_isr;;
 float speed_command = 0.0f;
 const float LUT[PPP]={
-0.0000f,0.2588f,0.5000f,0.7071f,0.8660f, 
-0.9659f,1.0000f,0.9659f,0.8660f,0.7071f, 
-0.5000f,0.2588f,0.0000f,-0.2588f,-0.5000f, 
--0.7071f,-0.8660f,-0.9659f,-1.0000f,-0.9659f, 
--0.8660f,-0.7071f,-0.5000f,-0.2588f};
+0.0000f,0.0654f,0.1305f,0.1951f,0.2588f, 
+0.3214f,0.3827f,0.4423f,0.5000f,0.5556f, 
+0.6088f,0.6593f,0.7071f,0.7518f,0.7934f, 
+0.8315f,0.8660f,0.8969f,0.9239f,0.9469f, 
+0.9659f,0.9808f,0.9914f,0.9979f,1.0000f, 
+0.9979f,0.9914f,0.9808f,0.9659f,0.9469f, 
+0.9239f,0.8969f,0.8660f,0.8315f,0.7934f, 
+0.7518f,0.7071f,0.6593f,0.6088f,0.5556f, 
+0.5000f,0.4423f,0.3827f,0.3214f,0.2588f, 
+0.1951f,0.1305f,0.0654f,0.0000f,-0.0654f, 
+-0.1305f,-0.1951f,-0.2588f,-0.3214f,-0.3827f, 
+-0.4423f,-0.5000f,-0.5556f,-0.6088f,-0.6593f, 
+-0.7071f,-0.7518f,-0.7934f,-0.8315f,-0.8660f, 
+-0.8969f,-0.9239f,-0.9469f,-0.9659f,-0.9808f, 
+-0.9914f,-0.9979f,-1.0000f,-0.9979f,-0.9914f, 
+-0.9808f,-0.9659f,-0.9469f,-0.9239f,-0.8969f, 
+-0.8660f,-0.8315f,-0.7934f,-0.7518f,-0.7071f, 
+-0.6593f,-0.6088f,-0.5556f,-0.5000f,-0.4423f, 
+-0.3827f,-0.3214f,-0.2588f,-0.1951f,-0.1305f, 
+-0.0654f};
 
 void setup() {
 
@@ -110,30 +125,36 @@ ISR(TIMER1_COMPA_vect)
 {
   uint8_t pwm0, pwm1, pwm2;
   static uint8_t ti0 = 0, ti1 = PPP / 8, ti2 = PPP / 4;
+  static uint8_t ppp_frac=1; // Schnellste Drehzahl = 4, geringste Drehzahl = 1
   //static uint8_t ti0 = 0, ti1 = PPP / 3 , ti2 = 2* PPP / 3;
   // set the new output compare value of current speed. page 101
-  isr_cnt = ((int) (ISRTIMDIV / speed)) - 1 ;
+  isr_cnt = (ppp_frac * (int) (ISRTIMDIV / speed)) - 1 ;
   OCR1A = isr_cnt;
 
   //toggle green LED
   //digitalWrite(LEDGREEN, digitalRead(LEDGREEN) ^ 1);
   digitalWrite(LEDGREEN, 1);
 
-  pwm0 = 128 + (uint16_t) ((float) analog1 * LUT[ti2++]);
-  pwm1 = 128 + (uint16_t) ((float) analog1 * LUT[ti1++]);
-  pwm2 = 128 + (uint16_t) ((float) analog1 * LUT[ti0++]);
+  pwm0 = 128 + (uint16_t) ((float) analog1 * LUT[ti2]);
+  pwm1 = 128 + (uint16_t) ((float) analog1 * LUT[ti1]);
+  pwm2 = 128 + (uint16_t) ((float) analog1 * LUT[ti0]);
+  
 
   OCR2B = pwm0; /* pin PD3 */
   OCR0B = pwm1; /* pin PD5 */
   OCR0A = pwm2; /* pin PD6 */
-
+  
+  ti2+=ppp_frac;
+  ti1+=ppp_frac;
+  ti0+=ppp_frac;
+  
   ti0 %= PPP;
   ti1 %= PPP;
   ti2 %= PPP;
 
   if (speed_command > speed)
   {
-    speed += P0 / (2.0 * speed);
+    speed += ((float) ppp_frac) * P0 / (2.0 * speed);
     if (speed > speed_command)
     {
       speed = speed_command;
@@ -141,13 +162,24 @@ ISR(TIMER1_COMPA_vect)
   }
   if (speed_command < speed)
   {
-    speed -= P0 / (2.0 * speed);
+    speed -= ((float) ppp_frac) * P0 / (2.0 * speed);
     if (speed < speed_command)
     {
       speed = speed_command;
     }
   }
   if (speed < MINSPEED) speed = MINSPEED;
+
+  if(ppp_frac < 4 && isr_cnt < 5000)
+  {
+    ppp_frac++;
+  }
+
+  
+  if(ppp_frac > 1 && isr_cnt > 12000)
+  {
+    ppp_frac--;
+  }
 
   timer_after_isr = TCNT1;
 
@@ -258,15 +290,15 @@ void loop() {
   analog0raw = analogRead(23);
   analog1 = analogRead(24) / 9 ;
   /* speed 1..125 Hz mit ein bisschen Hysterese */
-  if (analog0raw > analog0 + 4)
+  if (analog0raw > analog0 + 10)
   {
-    analog0 = analog0raw - 4;
+    analog0 = analog0raw - 10;
   }
   if (analog0raw < analog0)
   {
     analog0 = analog0raw;
   }
-  speed_command = MINSPEED + 125.0 * ((float) analog0) / 1019.0f;
+  speed_command = MINSPEED + 125.0 * ((float) analog0) / 1013.0f;
 
   switch ((int) readSwitch())
   {

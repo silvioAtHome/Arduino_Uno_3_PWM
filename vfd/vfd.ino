@@ -24,13 +24,16 @@
 #include <SPI.h>
 
 #define LEDGREEN 2
-#define PPP 96
+#define PPP 192
 #define ISRTIMERFREQUENCY 1000000.0f
 
 // manuell rechnen ISRTIMDIV = ISRTIMERFREQUENCY / PPP;
 // #define ISRTIMDIV 31250.0f
-#define ISRTIMDIV 10416.667 
+#define ISRTIMDIV 5208.3333 
 #define MINSPEED 1.0f
+
+#define MAXSPEED 200.0f
+#define POTIHYSTERESIS 20
 
 // manuell rechnen. Beschleunigungsfaktor
 /*p0=acc*2.0/((float) PPP);
@@ -41,7 +44,7 @@
   acc:50  4.083333 3.062500
   acc:100 8.166667 6.125000
 */
-#define P0 2.0833333
+#define P0 1.0416667
 
 uint8_t LCD[4];
 uint8_t tic_cnt;
@@ -51,26 +54,45 @@ volatile float speed = MINSPEED;
 volatile uint16_t isr_cnt = 0, timer_after_isr;;
 float speed_command = 0.0f;
 const float LUT[PPP]={
-0.0000f,0.0654f,0.1305f,0.1951f,0.2588f, 
-0.3214f,0.3827f,0.4423f,0.5000f,0.5556f, 
-0.6088f,0.6593f,0.7071f,0.7518f,0.7934f, 
-0.8315f,0.8660f,0.8969f,0.9239f,0.9469f, 
-0.9659f,0.9808f,0.9914f,0.9979f,1.0000f, 
-0.9979f,0.9914f,0.9808f,0.9659f,0.9469f, 
-0.9239f,0.8969f,0.8660f,0.8315f,0.7934f, 
-0.7518f,0.7071f,0.6593f,0.6088f,0.5556f, 
-0.5000f,0.4423f,0.3827f,0.3214f,0.2588f, 
-0.1951f,0.1305f,0.0654f,0.0000f,-0.0654f, 
--0.1305f,-0.1951f,-0.2588f,-0.3214f,-0.3827f, 
--0.4423f,-0.5000f,-0.5556f,-0.6088f,-0.6593f, 
--0.7071f,-0.7518f,-0.7934f,-0.8315f,-0.8660f, 
--0.8969f,-0.9239f,-0.9469f,-0.9659f,-0.9808f, 
--0.9914f,-0.9979f,-1.0000f,-0.9979f,-0.9914f, 
--0.9808f,-0.9659f,-0.9469f,-0.9239f,-0.8969f, 
--0.8660f,-0.8315f,-0.7934f,-0.7518f,-0.7071f, 
--0.6593f,-0.6088f,-0.5556f,-0.5000f,-0.4423f, 
--0.3827f,-0.3214f,-0.2588f,-0.1951f,-0.1305f, 
--0.0654f};
+0.0000f,0.0327f,0.0654f,0.0980f,0.1305f, 
+0.1629f,0.1951f,0.2271f,0.2588f,0.2903f, 
+0.3214f,0.3523f,0.3827f,0.4127f,0.4423f, 
+0.4714f,0.5000f,0.5281f,0.5556f,0.5825f, 
+0.6088f,0.6344f,0.6593f,0.6836f,0.7071f, 
+0.7299f,0.7518f,0.7730f,0.7934f,0.8128f, 
+0.8315f,0.8492f,0.8660f,0.8819f,0.8969f, 
+0.9109f,0.9239f,0.9359f,0.9469f,0.9569f, 
+0.9659f,0.9739f,0.9808f,0.9866f,0.9914f, 
+0.9952f,0.9979f,0.9995f,1.0000f,0.9995f, 
+0.9979f,0.9952f,0.9914f,0.9866f,0.9808f, 
+0.9739f,0.9659f,0.9569f,0.9469f,0.9359f, 
+0.9239f,0.9109f,0.8969f,0.8819f,0.8660f, 
+0.8492f,0.8315f,0.8128f,0.7934f,0.7730f, 
+0.7518f,0.7299f,0.7071f,0.6836f,0.6593f, 
+0.6344f,0.6088f,0.5825f,0.5556f,0.5281f, 
+0.5000f,0.4714f,0.4423f,0.4127f,0.3827f, 
+0.3523f,0.3214f,0.2903f,0.2588f,0.2271f, 
+0.1951f,0.1629f,0.1305f,0.0980f,0.0654f, 
+0.0327f,0.0000f,-0.0327f,-0.0654f,-0.0980f, 
+-0.1305f,-0.1629f,-0.1951f,-0.2271f,-0.2588f, 
+-0.2903f,-0.3214f,-0.3523f,-0.3827f,-0.4127f, 
+-0.4423f,-0.4714f,-0.5000f,-0.5281f,-0.5556f, 
+-0.5825f,-0.6088f,-0.6344f,-0.6593f,-0.6836f, 
+-0.7071f,-0.7299f,-0.7518f,-0.7730f,-0.7934f, 
+-0.8128f,-0.8315f,-0.8492f,-0.8660f,-0.8819f, 
+-0.8969f,-0.9109f,-0.9239f,-0.9359f,-0.9469f, 
+-0.9569f,-0.9659f,-0.9739f,-0.9808f,-0.9866f, 
+-0.9914f,-0.9952f,-0.9979f,-0.9995f,-1.0000f, 
+-0.9995f,-0.9979f,-0.9952f,-0.9914f,-0.9866f, 
+-0.9808f,-0.9739f,-0.9659f,-0.9569f,-0.9469f, 
+-0.9359f,-0.9239f,-0.9109f,-0.8969f,-0.8819f, 
+-0.8660f,-0.8492f,-0.8315f,-0.8128f,-0.7934f, 
+-0.7730f,-0.7518f,-0.7299f,-0.7071f,-0.6836f, 
+-0.6593f,-0.6344f,-0.6088f,-0.5825f,-0.5556f, 
+-0.5281f,-0.5000f,-0.4714f,-0.4423f,-0.4127f, 
+-0.3827f,-0.3523f,-0.3214f,-0.2903f,-0.2588f, 
+-0.2271f,-0.1951f,-0.1629f,-0.1305f,-0.0980f, 
+-0.0654f,-0.0327f};
 
 void setup() {
 
@@ -128,7 +150,7 @@ ISR(TIMER1_COMPA_vect)
   static uint8_t ppp_frac=1; // Schnellste Drehzahl = 4, geringste Drehzahl = 1
   //static uint8_t ti0 = 0, ti1 = PPP / 3 , ti2 = 2* PPP / 3;
   // set the new output compare value of current speed. page 101
-  isr_cnt = (ppp_frac * (int) (ISRTIMDIV / speed)) - 1 ;
+  isr_cnt = ((int) (((float)ppp_frac) * ISRTIMDIV / speed)) - 1 ;
   OCR1A = isr_cnt;
 
   //toggle green LED
@@ -170,13 +192,13 @@ ISR(TIMER1_COMPA_vect)
   }
   if (speed < MINSPEED) speed = MINSPEED;
 
-  if(ppp_frac < 4 && isr_cnt < 5000)
+  if(ppp_frac < 16 && isr_cnt < 500)
   {
     ppp_frac++;
   }
 
   
-  if(ppp_frac > 1 && isr_cnt > 12000)
+  if(ppp_frac > 1 && isr_cnt > 1200)
   {
     ppp_frac--;
   }
@@ -290,15 +312,15 @@ void loop() {
   analog0raw = analogRead(23);
   analog1 = analogRead(24) / 9 ;
   /* speed 1..125 Hz mit ein bisschen Hysterese */
-  if (analog0raw > analog0 + 10)
+  if (analog0raw > analog0 + POTIHYSTERESIS)
   {
-    analog0 = analog0raw - 10;
+    analog0 = analog0raw - POTIHYSTERESIS;
   }
   if (analog0raw < analog0)
   {
     analog0 = analog0raw;
   }
-  speed_command = MINSPEED + 125.0 * ((float) analog0) / 1013.0f;
+  speed_command = MINSPEED + (MAXSPEED-MINSPEED) * ((float) analog0) / (1023.0f - (float) POTIHYSTERESIS);
 
   switch ((int) readSwitch())
   {

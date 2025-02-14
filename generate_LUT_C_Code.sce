@@ -1,4 +1,4 @@
-LUT_Size=24*4;
+LUT_Size=24*4*2;
 
 mprintf("const float LUT[PPP]={\n")
 for n=1:LUT_Size

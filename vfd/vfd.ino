@@ -1,4 +1,3 @@
-
 /*
   PIN 13 / PB7 is LED "L" and already taken for SPI
   PIN 8 switch for display select 7Seg
@@ -26,13 +25,16 @@
 #define LEDGREEN 2
 #define PPP 192
 #define ISRTIMERFREQUENCY 1000000.0f
+// 1 = 2-phase, 0 = 3 phase with 120 degrees
+#define TWOPHASEGENERATION 1
 
 // manuell rechnen ISRTIMDIV = ISRTIMERFREQUENCY / PPP;
 // #define ISRTIMDIV 31250.0f
-#define ISRTIMDIV 5208.3333 
-#define MINSPEED 1.0f
+#define ISRTIMDIV 5208.3333
 
-#define MAXSPEED 200.0f
+#define MINSPEED 1.0f
+#define MAXSPEED 100.0f
+
 #define POTIHYSTERESIS 20
 
 // manuell rechnen. Beschleunigungsfaktor
@@ -48,51 +50,52 @@
 
 uint8_t LCD[4];
 uint8_t tic_cnt;
-uint16_t analog0raw, analog0 = 0, analog1=0;
+uint16_t analog0raw,analog1raw, analog0 = 0, analog1 = 0, analog1scaled = 0;
 
 volatile float speed = MINSPEED;
 volatile uint16_t isr_cnt = 0, timer_after_isr;;
 float speed_command = 0.0f;
-const float LUT[PPP]={
-0.0000f,0.0327f,0.0654f,0.0980f,0.1305f, 
-0.1629f,0.1951f,0.2271f,0.2588f,0.2903f, 
-0.3214f,0.3523f,0.3827f,0.4127f,0.4423f, 
-0.4714f,0.5000f,0.5281f,0.5556f,0.5825f, 
-0.6088f,0.6344f,0.6593f,0.6836f,0.7071f, 
-0.7299f,0.7518f,0.7730f,0.7934f,0.8128f, 
-0.8315f,0.8492f,0.8660f,0.8819f,0.8969f, 
-0.9109f,0.9239f,0.9359f,0.9469f,0.9569f, 
-0.9659f,0.9739f,0.9808f,0.9866f,0.9914f, 
-0.9952f,0.9979f,0.9995f,1.0000f,0.9995f, 
-0.9979f,0.9952f,0.9914f,0.9866f,0.9808f, 
-0.9739f,0.9659f,0.9569f,0.9469f,0.9359f, 
-0.9239f,0.9109f,0.8969f,0.8819f,0.8660f, 
-0.8492f,0.8315f,0.8128f,0.7934f,0.7730f, 
-0.7518f,0.7299f,0.7071f,0.6836f,0.6593f, 
-0.6344f,0.6088f,0.5825f,0.5556f,0.5281f, 
-0.5000f,0.4714f,0.4423f,0.4127f,0.3827f, 
-0.3523f,0.3214f,0.2903f,0.2588f,0.2271f, 
-0.1951f,0.1629f,0.1305f,0.0980f,0.0654f, 
-0.0327f,0.0000f,-0.0327f,-0.0654f,-0.0980f, 
--0.1305f,-0.1629f,-0.1951f,-0.2271f,-0.2588f, 
--0.2903f,-0.3214f,-0.3523f,-0.3827f,-0.4127f, 
--0.4423f,-0.4714f,-0.5000f,-0.5281f,-0.5556f, 
--0.5825f,-0.6088f,-0.6344f,-0.6593f,-0.6836f, 
--0.7071f,-0.7299f,-0.7518f,-0.7730f,-0.7934f, 
--0.8128f,-0.8315f,-0.8492f,-0.8660f,-0.8819f, 
--0.8969f,-0.9109f,-0.9239f,-0.9359f,-0.9469f, 
--0.9569f,-0.9659f,-0.9739f,-0.9808f,-0.9866f, 
--0.9914f,-0.9952f,-0.9979f,-0.9995f,-1.0000f, 
--0.9995f,-0.9979f,-0.9952f,-0.9914f,-0.9866f, 
--0.9808f,-0.9739f,-0.9659f,-0.9569f,-0.9469f, 
--0.9359f,-0.9239f,-0.9109f,-0.8969f,-0.8819f, 
--0.8660f,-0.8492f,-0.8315f,-0.8128f,-0.7934f, 
--0.7730f,-0.7518f,-0.7299f,-0.7071f,-0.6836f, 
--0.6593f,-0.6344f,-0.6088f,-0.5825f,-0.5556f, 
--0.5281f,-0.5000f,-0.4714f,-0.4423f,-0.4127f, 
--0.3827f,-0.3523f,-0.3214f,-0.2903f,-0.2588f, 
--0.2271f,-0.1951f,-0.1629f,-0.1305f,-0.0980f, 
--0.0654f,-0.0327f};
+const float LUT[PPP] = {
+  0.0000f, 0.0327f, 0.0654f, 0.0980f, 0.1305f,
+  0.1629f, 0.1951f, 0.2271f, 0.2588f, 0.2903f,
+  0.3214f, 0.3523f, 0.3827f, 0.4127f, 0.4423f,
+  0.4714f, 0.5000f, 0.5281f, 0.5556f, 0.5825f,
+  0.6088f, 0.6344f, 0.6593f, 0.6836f, 0.7071f,
+  0.7299f, 0.7518f, 0.7730f, 0.7934f, 0.8128f,
+  0.8315f, 0.8492f, 0.8660f, 0.8819f, 0.8969f,
+  0.9109f, 0.9239f, 0.9359f, 0.9469f, 0.9569f,
+  0.9659f, 0.9739f, 0.9808f, 0.9866f, 0.9914f,
+  0.9952f, 0.9979f, 0.9995f, 1.0000f, 0.9995f,
+  0.9979f, 0.9952f, 0.9914f, 0.9866f, 0.9808f,
+  0.9739f, 0.9659f, 0.9569f, 0.9469f, 0.9359f,
+  0.9239f, 0.9109f, 0.8969f, 0.8819f, 0.8660f,
+  0.8492f, 0.8315f, 0.8128f, 0.7934f, 0.7730f,
+  0.7518f, 0.7299f, 0.7071f, 0.6836f, 0.6593f,
+  0.6344f, 0.6088f, 0.5825f, 0.5556f, 0.5281f,
+  0.5000f, 0.4714f, 0.4423f, 0.4127f, 0.3827f,
+  0.3523f, 0.3214f, 0.2903f, 0.2588f, 0.2271f,
+  0.1951f, 0.1629f, 0.1305f, 0.0980f, 0.0654f,
+  0.0327f, 0.0000f, -0.0327f, -0.0654f, -0.0980f,
+  -0.1305f, -0.1629f, -0.1951f, -0.2271f, -0.2588f,
+  -0.2903f, -0.3214f, -0.3523f, -0.3827f, -0.4127f,
+  -0.4423f, -0.4714f, -0.5000f, -0.5281f, -0.5556f,
+  -0.5825f, -0.6088f, -0.6344f, -0.6593f, -0.6836f,
+  -0.7071f, -0.7299f, -0.7518f, -0.7730f, -0.7934f,
+  -0.8128f, -0.8315f, -0.8492f, -0.8660f, -0.8819f,
+  -0.8969f, -0.9109f, -0.9239f, -0.9359f, -0.9469f,
+  -0.9569f, -0.9659f, -0.9739f, -0.9808f, -0.9866f,
+  -0.9914f, -0.9952f, -0.9979f, -0.9995f, -1.0000f,
+  -0.9995f, -0.9979f, -0.9952f, -0.9914f, -0.9866f,
+  -0.9808f, -0.9739f, -0.9659f, -0.9569f, -0.9469f,
+  -0.9359f, -0.9239f, -0.9109f, -0.8969f, -0.8819f,
+  -0.8660f, -0.8492f, -0.8315f, -0.8128f, -0.7934f,
+  -0.7730f, -0.7518f, -0.7299f, -0.7071f, -0.6836f,
+  -0.6593f, -0.6344f, -0.6088f, -0.5825f, -0.5556f,
+  -0.5281f, -0.5000f, -0.4714f, -0.4423f, -0.4127f,
+  -0.3827f, -0.3523f, -0.3214f, -0.2903f, -0.2588f,
+  -0.2271f, -0.1951f, -0.1629f, -0.1305f, -0.0980f,
+  -0.0654f, -0.0327f
+};
 
 void setup() {
 
@@ -109,32 +112,32 @@ void setup() {
   SPI.setClockDivider(SPI_CLOCK_DIV128);
   SPI.setDataMode(SPI_MODE3);
 
-/* http://www.openmusiclabs.com/learning/digital/synchronizing-timers/index.html 
-  timer synchronization */
+  /* http://www.openmusiclabs.com/learning/digital/synchronizing-timers/index.html
+    timer synchronization */
   /* init Timer */
   noInterrupts(); /* disable all interrupts */
   /* Timer 1 for ISR */
   /* stop all timer */
-  GTCCR = (1<<TSM)|(1<<PSRASY)|(1<<PSRSYNC); // halt all timers
+  GTCCR = (1 << TSM) | (1 << PSRASY) | (1 << PSRSYNC); // halt all timers
   /* set to: Clear Timer on Compare Match (CTC) Mode */
   TCCR1A = (1 << COM1A0);   /* toggle OC1A, but it is just enable */
   TCCR1B =  (1 << WGM12);   /* enable CTC mode */
   OCR1A = 65535;            /* initinal step until the ISR writes a new value */
   TCCR1B |=  (1 << CS11);   /* prescaler = 8 -> 1MHz Zählgeschwindigkeit bei clock = 8MHz */
   TIMSK1 |= (1 << OCIE1A);  /* enable timer interrupt on output compare A */
-  TCNT1=0;
+  TCNT1 = 0;
 
   /* PWM Timer0 */
   /*OC0A ist Pin PD6, OC0B ist Pin PD5 */
   DDRD |= (1 << PD5) | (1 << PD6); /* enable outputs */
   TCCR0A = (1 << WGM00) | (1 << COM0B1) | (1 << COM0A1); /* phase corrected mode */
-  TCNT0=0;
+  TCNT0 = 0;
   TCCR0B = (1 << CS00);  /* prescaler = 1 */
   /* PWM Timer2 */
   /* OC2B ist Pin PD3 */
   DDRD |= (1 << PD3); /* enable output */
   TCCR2A = (1 << WGM20) | (1 << COM2B1);
-  TCNT2=0;
+  TCNT2 = 0;
   /* enable clock for pwm, no prescaler f_pwm = 8e6/510 = 15686.275 Hz, DS p 124 */
   TCCR2B = (1 << CS20);  /* prescaler = 1 */
   interrupts();  // enable all interrupts
@@ -146,9 +149,12 @@ void setup() {
 ISR(TIMER1_COMPA_vect)
 {
   uint8_t pwm0, pwm1, pwm2;
-  static uint8_t ti0 = 0, ti1 = PPP / 8, ti2 = PPP / 4;
-  static uint8_t ppp_frac=1; // Schnellste Drehzahl = 4, geringste Drehzahl = 1
+  #if TWOPHASEGENERATION
+  static uint8_t ti0 = 0, ti1 = PPP / 4, ti2 = PPP / 2;
+  #else
   //static uint8_t ti0 = 0, ti1 = PPP / 3 , ti2 = 2* PPP / 3;
+  #endif
+  static uint8_t ppp_frac = 1; // Schnellste Drehzahl = 4, geringste Drehzahl = 1
   // set the new output compare value of current speed. page 101
   isr_cnt = ((int) (((float)ppp_frac) * ISRTIMDIV / speed)) - 1 ;
   OCR1A = isr_cnt;
@@ -157,19 +163,19 @@ ISR(TIMER1_COMPA_vect)
   //digitalWrite(LEDGREEN, digitalRead(LEDGREEN) ^ 1);
   digitalWrite(LEDGREEN, 1);
 
-  pwm0 = 128 + (uint16_t) ((float) analog1 * LUT[ti2]);
-  pwm1 = 128 + (uint16_t) ((float) analog1 * LUT[ti1]);
-  pwm2 = 128 + (uint16_t) ((float) analog1 * LUT[ti0]);
-  
+  pwm0 = 128 + (uint16_t) ((float) analog1scaled * LUT[ti0]);
+  pwm1 = 128 + (uint16_t) ((float) analog1scaled * LUT[ti1]);
+  pwm2 = 128 + (uint16_t) ((float) analog1scaled * LUT[ti2]);
 
-  OCR2B = pwm0; /* pin PD3 */
-  OCR0B = pwm1; /* pin PD5 */
-  OCR0A = pwm2; /* pin PD6 */
-  
-  ti2+=ppp_frac;
-  ti1+=ppp_frac;
-  ti0+=ppp_frac;
-  
+
+  OCR2B = pwm0; /* pin PD3 */ // Haupt Phase
+  OCR0B = pwm1; /* pin PD5 */ // Mittelpunkt
+  OCR0A = pwm2; /* pin PD6 */ // Hilfswicklung
+
+  ti2 += ppp_frac;
+  ti1 += ppp_frac;
+  ti0 += ppp_frac;
+
   ti0 %= PPP;
   ti1 %= PPP;
   ti2 %= PPP;
@@ -192,15 +198,15 @@ ISR(TIMER1_COMPA_vect)
   }
   if (speed < MINSPEED) speed = MINSPEED;
 
-  if(ppp_frac < 16 && isr_cnt < 500)
+  if (ppp_frac <= 8 && isr_cnt < 400)
   {
-    ppp_frac++;
+    ppp_frac *= 2;
   }
 
-  
-  if(ppp_frac > 1 && isr_cnt > 1200)
+
+  if (ppp_frac > 1 && isr_cnt > 1000)
   {
-    ppp_frac--;
+    ppp_frac /= 2;
   }
 
   timer_after_isr = TCNT1;
@@ -310,7 +316,7 @@ void addComma(uint8_t digit, uint8_t *copy_to)
 
 void loop() {
   analog0raw = analogRead(23);
-  analog1 = analogRead(24) / 9 ;
+  analog1raw = analogRead(24);
   /* speed 1..125 Hz mit ein bisschen Hysterese */
   if (analog0raw > analog0 + POTIHYSTERESIS)
   {
@@ -320,7 +326,17 @@ void loop() {
   {
     analog0 = analog0raw;
   }
-  speed_command = MINSPEED + (MAXSPEED-MINSPEED) * ((float) analog0) / (1023.0f - (float) POTIHYSTERESIS);
+  // Amplitude poti
+  if (analog1raw > analog1 + POTIHYSTERESIS)
+  {
+    analog1 = analog1raw - POTIHYSTERESIS;
+  }
+  if (analog1raw < analog1)
+  {
+    analog1 = analog1raw;
+  }
+  analog1scaled= analog1/9;
+  speed_command = MINSPEED + (MAXSPEED - MINSPEED) * ((float) analog0) / (1023.0f - (float) POTIHYSTERESIS);
 
   switch ((int) readSwitch())
   {

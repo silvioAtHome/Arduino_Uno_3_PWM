@@ -50,7 +50,7 @@
 
 uint8_t LCD[4];
 uint8_t tic_cnt;
-uint16_t analog0raw,analog1raw, analog0 = 0, analog1 = 0, analog1scaled = 0;
+uint16_t analog0raw,analog1raw, analog0 = 0, analog1 = 0,analog2 = 0, analog1scaled = 0;
 
 volatile float speed = MINSPEED;
 volatile uint16_t isr_cnt = 0, timer_after_isr;;
@@ -152,7 +152,7 @@ ISR(TIMER1_COMPA_vect)
   #if TWOPHASEGENERATION
   static uint8_t ti0 = 0, ti1 = PPP / 4, ti2 = PPP / 2;
   #else
-  //static uint8_t ti0 = 0, ti1 = PPP / 3 , ti2 = 2* PPP / 3;
+  //static uint8_t ti0 = 0, ti1 = PPP / 3 , ti2 = PPP / 3 * 2;
   #endif
   static uint8_t ppp_frac = 1; // Schnellste Drehzahl = 4, geringste Drehzahl = 1
   // set the new output compare value of current speed. page 101
@@ -163,18 +163,23 @@ ISR(TIMER1_COMPA_vect)
   //digitalWrite(LEDGREEN, digitalRead(LEDGREEN) ^ 1);
   digitalWrite(LEDGREEN, 1);
 
-  pwm0 = 128 + (uint16_t) ((float) analog1scaled * LUT[ti0]);
-  pwm1 = 128 + (uint16_t) ((float) analog1scaled * LUT[ti1]);
-  pwm2 = 128 + (uint16_t) ((float) analog1scaled * LUT[ti2]);
+  pwm0 = 128 + (int8_t) ((float) analog1scaled * LUT[ti0]);
+  pwm1 = 128 + (int8_t) ((float) analog1scaled * LUT[ti1]);
+  pwm2 = 128 + (int8_t) ((float) analog1scaled * LUT[ti2]);
 
 
   OCR2B = pwm0; /* pin PD3 */ // Haupt Phase
   OCR0B = pwm1; /* pin PD5 */ // Mittelpunkt
   OCR0A = pwm2; /* pin PD6 */ // Hilfswicklung
 
-  ti2 += ppp_frac;
-  ti1 += ppp_frac;
   ti0 += ppp_frac;
+  ti1 = ti0 - analog2;
+  if(ti1 > 191) ti1 += 192; // check if underflow 
+  ti2 += ppp_frac;
+
+  // w= analog / 192 * 360
+  // Haupt-Mittel = sqrt(2-2*cos(w/180*%pi))
+  // Hilfs-Mittel = sqrt(2+2*cos(w/180*%pi))
 
   ti0 %= PPP;
   ti1 %= PPP;
@@ -317,6 +322,7 @@ void addComma(uint8_t digit, uint8_t *copy_to)
 void loop() {
   analog0raw = analogRead(23);
   analog1raw = analogRead(24);
+  analog2 = analogRead(25)/21;  // 0..48
   /* speed 1..125 Hz mit ein bisschen Hysterese */
   if (analog0raw > analog0 + POTIHYSTERESIS)
   {
@@ -347,7 +353,8 @@ void loop() {
       }
       else
       {
-        Tm74HC595(isr_cnt, LCD);
+        //Tm74HC595(isr_cnt, LCD);
+        Tm74HC595((uint16_t) analog2*360/192, LCD);
       }
       break;
     case 1:

@@ -13,6 +13,7 @@
 
   PIN A1 is Analogread(23) Poti Frequency
   PIN A2 is Analogread(24) Poti Amplitude
+  PIN A3 is Analogread(25) Poti Phasediff
 
   PWM Timer0 8 bit  (Arduino-Uno Pin 5,6, PD5/PD6) UNO 5,6
   ISR Tic-Timer1 16bit (Arduino-Pin 9,10 .. PB1,PB2) pins are not used
@@ -26,7 +27,7 @@
 #define PPP 192
 #define ISRTIMERFREQUENCY 1000000.0f
 // 1 = 2-phase, 0 = 3 phase with 120 degrees
-#define TWOPHASEGENERATION 1
+#define TWOPHASEGENERATION 0
 
 // manuell rechnen ISRTIMDIV = ISRTIMERFREQUENCY / PPP;
 // #define ISRTIMDIV 31250.0f
@@ -152,7 +153,7 @@ ISR(TIMER1_COMPA_vect)
   #if TWOPHASEGENERATION
   static uint8_t ti0 = 0, ti1 = PPP / 4, ti2 = PPP / 2;
   #else
-  //static uint8_t ti0 = 0, ti1 = PPP / 3 , ti2 = PPP / 3 * 2;
+  static uint8_t ti0 = 0, ti1 = PPP / 3 , ti2 = PPP / 3 * 2;
   #endif
   static uint8_t ppp_frac = 1; // Schnellste Drehzahl = 4, geringste Drehzahl = 1
   // set the new output compare value of current speed. page 101
@@ -173,8 +174,14 @@ ISR(TIMER1_COMPA_vect)
   OCR0A = pwm2; /* pin PD6 */ // Hilfswicklung
 
   ti0 += ppp_frac;
+  
+  #if TWOPHASEGENERATION
   ti1 = ti0 - analog2;
   if(ti1 > 191) ti1 += 192; // check if underflow 
+  #else
+  ti1 += ppp_frac;
+  #endif
+  
   ti2 += ppp_frac;
 
   // w= analog / 192 * 360
